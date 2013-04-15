@@ -14,20 +14,36 @@
 #               actual client / subscriber traffic.
 #
 #  Information: 
-#               Given Session Table:
+#
+#               1) Given Session Table:
 #
 #                 table set -subtable "hash_to_userinfo" \
 #                                     "MD5 hash" "User Information" \
 #                                     static::Timeout static::Lifetime
 #
-#               REST API structure:
 #
-#               URL http://virtual-addr/api/<version>/<resource>/<id>                  
+#               2) REST API structure:
 #
-#               GET hashes/          - Returns all values in table
-#               GET hashes/<hash>    - Returns value for hash in session table
-#               PUT hashes/<hash>    - Updates value for hash in session table
-#               DELETE hashes/<hash> - Destroys an entry correspondent to hash
+#                 URL http://virtual-addr/api/<version>/<resource>/<id>                  
+#
+#                 GET hashes/          - Returns all values in table
+#                 GET hashes/<hash>    - Returns value for hash in session table
+#                 PUT hashes/<hash>    - Updates value for hash in session table
+#                 DELETE hashes/<hash> - Destroys an entry correspondent to hash
+#
+#
+#               3)Expected Response (JSON)
+#
+#                 {
+#                   "name" : "api",
+#                   "version" : 1.0,
+#                   "request" : "GET /api/1.0/hashes/07867d0856f063cda129b7351,
+#                   "counts"  : 1,
+#                   "results" : [
+#                     { 07867d0856f063cda129b7351: ["shun", "125", "300"] }
+#                   ]
+#                 }
+#
 #
 #  Note:        The rule currently does not provide any authentication mechanism
 #               to API access. 
@@ -50,7 +66,7 @@ when HTTP_REQUEST {
   set time   [clock format [clock seconds] -gmt true]
   set req    "[HTTP::method] [HTTP::uri] [HTTP::version]"
   set ref    [HTTP::header "Referer"]
-  set ua 	 [HTTP::header "User-Agent"]
+  set ua     [HTTP::header "User-Agent"]
 
   set path [split [HTTP::path] "/"]
 
@@ -58,8 +74,9 @@ when HTTP_REQUEST {
   if {[lindex $path 1] eq $::API_NAME && [lindex $path 2] eq $::API_VER} {
 
     append $content "\{\n"
+    append $content "  \"name\": \"$::API_NAME\","
+    append $content "  \"version\": \"$::API_VER\","
     append $content "  \"query\": \"$req\"\n,"
-
 
     if {[lindex $path 3] eq $::RESOURCE} {
       
@@ -84,7 +101,7 @@ when HTTP_REQUEST {
                 append $content "  \"count\": 1,\n"
                 append $content "  \"results\":\[\n"
                 append $content "    \{\"$key\": \[\"$value\", \"$timeout\", \"$liefime\"\]\}\n"
-                append $content "  \]"
+                append $content "  \],"
               } else {
                 set status 
               }
@@ -101,6 +118,7 @@ when HTTP_REQUEST {
               table replace -subtable $::SUBTBL
               set status 200
             } else {
+              # No value is found correspondent to the given key
               set status 404
             }
           }
@@ -111,6 +129,7 @@ when HTTP_REQUEST {
               table delete -subtable $::SUBTBL $hash
               set status 200
             } else {
+              # No value is found correspondent to the given key
               set status 404
             }
           }
@@ -120,19 +139,31 @@ when HTTP_REQUEST {
         # GET /api/ver/res/
         if {HTTP::method eq "GET"} {
           set status 200
-          set keys  [table keys -subtable $::SUBTBL -notouch]
+
+          # Limiting number of key to 500 for performance reason
+          set keys  [table keys -subtable $::SUBTBL -count 500 -notouch]
           append $content "  \"count\": [llength $keys],\n"
           append $content "  \"results\":\[\n"
 
+          set index 0
           foreach key $keys {
+
             set value    [table lookup   -subtable $::SUBTBL -notouch]
             set timeout  [table timeout  -subtable $::SUBTBL -notouch]
             set lifetime [table lifetime -subtable $::SUBTBL -notouch]
 
-            append $content "    {\"$key\": [\"$value\", \"$timeout\", \"$liefime\"]},\n"
+            append $content "    {\"$key\": [\"$value\", \"$timeout\", \"$liefime\"]}"
+
+            set index [expr {$index + 1}]
+            if {$index == [llength $keys]}{
+              append $content ",\n"
+            } else {
+              append $content "\n"              
+            }
+
           }
 
-          append $content "  \]"
+          append $content "  \],"
 
         } else {
           # Returns 500 Internal Server Error as none-GET request to resource itself
