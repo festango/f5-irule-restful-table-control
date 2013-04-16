@@ -1,5 +1,5 @@
 #
-#  Sample iRule RESTFULL table control rev 0.1 (2013/4/15)
+#  Sample RESTFULL table control iRule - API responder rev 0.1 (2013/4/15)
 #
 #  Written by:  Shun Takahashi
 #
